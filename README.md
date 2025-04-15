@@ -1,6 +1,9 @@
 # BioMAX2sfrm, version 1.0.0 (released 15.04.2025)
 Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm format
 
+>[!IMPORTANT]
+> This is work in progress, please make sure to reach out if you run into troubles
+
 ## How to use
 ### General
  - Drag and drop the h5 master files (_*_master.h5_) onto the window
@@ -21,3 +24,5 @@ Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm forma
 ### FUTURE
  - figure out a way to calculate the sensor efficiency fast (without imports) we know energy, material and thickness
  - Bruker/APEX doesn't support the JUNGFRAU detector so we tell it to use the EIGER settings e.g. HPAD, 10/37 px gaps by settings the name to: 'JUNGFRAU(EIGER2)' APEX only parses for 'EIGER' in the name
+
+#### I hope this turns out to be useful for someone!
