@@ -103,7 +103,7 @@ class ConversionWindow(QtWidgets.QMainWindow):
                           '<li> Untick <b>Overwrite</b> if you want to save time finishing previously aborted conversions </li>'
                           '</ul>'
                           '<ul><h2>Features</h2>'
-                          '<li> If multiple <i>*_master.h5</i> files are dropped together,<br> they have their run number and kappa angle incemented automatically </li>'
+                          '<li> If multiple <i>*_master.h5</i> files are dropped together,<br> they have their run number and kappa angle incremented automatically </li>'
                           '</ul>'
                           )
         help.setWidget(help_text)
