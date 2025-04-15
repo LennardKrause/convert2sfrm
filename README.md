@@ -6,6 +6,7 @@ Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm forma
 
 ## How to use
 ### General
+ - Download and run using `python3 BioMAX2sfrm.py`
  - Drag and drop the h5 master files (****_master.h5***) onto the window
  - You can drop all files, only ****_master.h5*** files will be added
  - You can change the run number and the kappa angle for each run
