@@ -22,7 +22,8 @@ Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm forma
 
 
 ### FUTURE
- - figure out a way to calculate the sensor efficiency fast (without imports) we know energy, material and thickness
+ - Once the kappa angle is stored in the h5 the angle will be set automatically
+ - Figure out a way to calculate the sensor efficiency fast (without imports) we know energy, material and thickness
  - Bruker/APEX doesn't support the JUNGFRAU detector so we tell it to use the EIGER settings e.g. HPAD, 10/37 px gaps by settings the name to: 'JUNGFRAU(EIGER2)' as APEX only parses for 'EIGER' in the name
 
 #### I hope this turns out to be useful for someone!
