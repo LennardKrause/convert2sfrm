@@ -6,8 +6,8 @@ Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm forma
 
 ## How to use
 ### General
- - Drag and drop the h5 master files (_*_master.h5_) onto the window
- - You can drop all files, only _*_master.h5_ files will be added
+ - Drag and drop the h5 master files (****_master.h5***) onto the window
+ - You can drop all files, only ****_master.h5*** files will be added
  - You can change the run number and the kappa angle for each run
  - The rows (runs) will be converted successively using all the cores you have
 
@@ -18,7 +18,7 @@ Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm forma
  - Untick **Overwrite** if you want to save time finishing previously aborted conversions
 
 ### Features
- - If multiple _*_master.h5_ files are dropped together,<br> they have their run number and kappa angle incremented automatically
+ - If multiple ****_master.h5*** files are dropped together, they have their run number and kappa angle incremented automatically
 
 
 ### FUTURE
