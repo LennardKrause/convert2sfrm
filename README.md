@@ -2,7 +2,7 @@
 An easy-to-use GUI to convert [BioMAX](https://www.maxiv.lu.se/beamlines-accelerators/beamlines/biomax/) ([EIGER2](https://www.dectris.com/en/detectors/x-ray-detectors/eiger2/)) or [MicroMAX](https://www.maxiv.lu.se/beamlines-accelerators/beamlines/micromax/) ([EIGER2](https://www.dectris.com/en/detectors/x-ray-detectors/eiger2/)/[JUNGFRAU](https://www.psi.ch/en/lxn/jungfrau)) data to the [Bruker](https://www.bruker.com) ***.sfrm*** format. It makes extensive use of hardcoded defaults to streamline the experience. If you are looking to convert [PILATUS3](https://www.dectris.com/en/support/manuals-docs/pilatus3-x-cdte-for-synchrotron/) data, I have [good news](https://github.com/LennardKrause/p3fc) for you too!
 
 >[!IMPORTANT]
-> This is work in progress, please make sure to reach out if you run into troubles
+> This is work in progress, please make sure to reach out if you run into trouble
 
 ![Example picture of the conversion window.](/BioMAX2sfrm.png)
 
