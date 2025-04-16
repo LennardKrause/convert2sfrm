@@ -4,6 +4,8 @@ Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm forma
 >[!IMPORTANT]
 > This is work in progress, please make sure to reach out if you run into troubles
 
+![Example picture of the conversion window.](/BioMAX2sfrm.png)
+
 ## How to use
 ### General
  - Download and run using `python3 BioMAX2sfrm.py`
