@@ -1,5 +1,5 @@
 # BioMAX2sfrm, version 1.0.0 (released 15.04.2025)
-Convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to Bruker .sfrm format
+An easy-to-use GUI to convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to the Bruker ***.sfrm*** format, that makes extensive use of hardcoded defaults to streamline the experience. If you are looking to convert PILATUS3 data, I have [good news](https://github.com/LennardKrause/p3fc) for you too!
 
 >[!IMPORTANT]
 > This is work in progress, please make sure to reach out if you run into troubles
