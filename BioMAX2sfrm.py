@@ -13,7 +13,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 #
 # Bruker/APEX doesn't support the JUNGFRAU detector
 # so we tell it to use the EIGER settings e.g. HPAD, 10/37 px gaps
-# by settings the name to: 'JUNGFRAU(EIGER2)'
+# by setting the name to: 'JUNGFRAU(EIGER2)'
 # APEX only parses for 'EIGER' in the name
 
 __version__ = '1.0.0'
@@ -53,11 +53,12 @@ class ConversionWindow(QtWidgets.QMainWindow):
 
         # add table widget
         self.table = QtWidgets.QTableWidget()
-        self.table.setColumnCount(5)
         self.table.setRowCount(0)
-        self.table.setTextElideMode(QtCore.Qt.TextElideMode.ElideNone)
-        self.table.setHorizontalHeaderLabels(['Path', 'Run', 'Kappa', 'Progress', 'Delete'])
+        self.table.setColumnCount(5)
+        self.table.setWordWrap(False)
         self.table.verticalHeader().setVisible(False)
+        self.table.setTextElideMode(QtCore.Qt.TextElideMode.ElideLeft)
+        self.table.setHorizontalHeaderLabels(['Path', 'Run', 'Kappa', 'Progress', 'Delete'])
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
@@ -103,7 +104,7 @@ class ConversionWindow(QtWidgets.QMainWindow):
                           '<li> Untick <b>Overwrite</b> if you want to save time finishing previously aborted conversions </li>'
                           '</ul>'
                           '<ul><h2>Features</h2>'
-                          '<li> If multiple <i>*_master.h5</i> files are dropped together,<br> they have their run number and kappa angle incremented automatically </li>'
+                          '<li> If multiple <i>*_master.h5</i> files are dropped together,<br> they have their run number and kappa angle incemented automatically </li>'
                           '</ul>'
                           )
         help.setWidget(help_text)
