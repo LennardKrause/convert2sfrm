@@ -15,27 +15,48 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 # so we tell it to use the EIGER settings e.g. HPAD, 10/37 px gaps
 # by setting the name to: 'JUNGFRAU(EIGER2)'
 # APEX only parses for 'EIGER' in the name
+#
+# make an 'is already completed' check in runlist
+# e.g. item.data(QtCore.Qt.ItemDataRole.UserRole+1000) < 100
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 __author__ = 'Lennard Krause'
 __email__ = 'lkrause@chem.au.dk'
-__date__ = '15.04.2025'
+__date__ = '17.04.2025'
 __year__ = '2025'
 
 class ConversionWindow(QtWidgets.QMainWindow):
     process_finished = QtCore.pyqtSignal()
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__()
         # variables
-        self.title = kwargs.get('title', f'Convert MicroMAX / BioMAX to .sfrm, version {__version__} (released {__date__})')
-        self.kappa_inc = kwargs.get('kappa_inc', 50)
-        self.file_suffix = kwargs.get('file_suffix', '_master.h5')
+        self.title = kwargs.get('title', 'None')
+        self.header_ext = kwargs.get('header_ext', [])
+        self.header_val = kwargs.get('header_val', [])
+        self.fn_suffix = kwargs.get('fn_suffix', '_master.h5')
+        self.fc_prepare = kwargs.get('fc_prepare', None)
+        self.fc_process = kwargs.get('fc_process', None)
+        # check prepare function
+        if self.fc_prepare is None:
+            print('Prepare function is None')
+            raise SystemExit
+        # check processing function
+        if self.fc_process is None:
+            print('Processing function is None')
+            raise SystemExit
         # internals
         self.button_group_rem = QtWidgets.QButtonGroup()
-        self.threads = QtCore.QThreadPool()
-        self.stopped = False
+        self.thread_pool = QtCore.QThreadPool()
+        self.flag_stop = False
         self.progress = 0
+        self.mp_timeout = 1
+        self.header = ['Path', 'Progress', 'Delete']
+        for item in self.header_ext[::-1]:
+            self.header.insert(1, item)
+        self.header_len = len(self.header)
+        self.col_num_progress = self.header_len-2
+        self.col_num_delete = self.header_len-1
 
         self.initUI()
     
@@ -54,34 +75,32 @@ class ConversionWindow(QtWidgets.QMainWindow):
         # add table widget
         self.table = QtWidgets.QTableWidget()
         self.table.setRowCount(0)
-        self.table.setColumnCount(5)
+        self.table.setColumnCount(self.header_len)
+        self.table.setHorizontalHeaderLabels(self.header)
         self.table.setWordWrap(False)
         self.table.verticalHeader().setVisible(False)
         self.table.setTextElideMode(QtCore.Qt.TextElideMode.ElideLeft)
-        self.table.setHorizontalHeaderLabels(['Path', 'Run', 'Kappa', 'Progress', 'Delete'])
         self.table.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.NoSelection)
         self.table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        for i in range(1, self.header_len):
+            self.table.horizontalHeader().setSectionResizeMode(i, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         progress_bar = ProgressDelegate(self.table)
-        self.table.setItemDelegateForColumn(3, progress_bar)
+        self.table.setItemDelegateForColumn(self.col_num_progress, progress_bar)
         layout.addWidget(self.table)
 
         # add start and stop buttons
         self.btn_box = QtWidgets.QGroupBox()
         self.btn_box_layout = QtWidgets.QHBoxLayout()
         self.btn_box.setLayout(self.btn_box_layout)
-        self.btn_conv = QtWidgets.QPushButton('Convert')
+        self.btn_conv = QtWidgets.QPushButton('Start')
         self.btn_conv.clicked.connect(self.on_run_clicked)
         self.btn_stop = QtWidgets.QPushButton('Stop')
         self.btn_stop.setEnabled(False)
         self.btn_stop.setStyleSheet('QPushButton:enabled{background-color: red;}')
-        self.btn_stop.clicked.connect(self.thread_abort)
+        self.btn_stop.clicked.connect(self.thread_stop)
         self.rdo_overwrite = QtWidgets.QRadioButton('Overwrite')
-        self.rdo_overwrite.setChecked(True)
+        self.rdo_overwrite.setChecked(False)
         self.btn_box_layout.addWidget(self.btn_stop, 1)
         self.btn_box_layout.addWidget(self.btn_conv, 10)
         self.btn_box_layout.addWidget(self.rdo_overwrite, 1)
@@ -123,23 +142,30 @@ class ConversionWindow(QtWidgets.QMainWindow):
             counter = 0
             for url in event.mimeData().urls():
                 file_path = url.toLocalFile()
-                if file_path and file_path.endswith(self.file_suffix):
+                if file_path and file_path.endswith(self.fn_suffix):
                     self.table.setRowCount(self.table.rowCount() + 1)
                     self.table.setItem(self.table.rowCount()-1, 0, QtWidgets.QTableWidgetItem(file_path))
-                    self.table.setItem(self.table.rowCount()-1, 1, QtWidgets.QTableWidgetItem(str(counter+1)))
-                    self.table.setItem(self.table.rowCount()-1, 2, QtWidgets.QTableWidgetItem(str(counter*self.kappa_inc)))
+                    if self.header_len > 3:
+                        for i, (op, val) in enumerate(self.header_val):
+                            if op == 'add':
+                                entry = counter+val
+                            elif op == 'mul':
+                                entry = counter*val
+                            else:
+                                entry = val
+                            self.table.setItem(self.table.rowCount()-1, i+1, QtWidgets.QTableWidgetItem(str(entry)))
                     # progress bar
                     bar = QtWidgets.QTableWidgetItem()
                     bar.setData(QtCore.Qt.ItemDataRole.UserRole+1000, 0)
                     item = QtWidgets.QTableWidgetItem(bar)
                     item.setFlags(~QtCore.Qt.ItemFlag.ItemIsEditable)
-                    self.table.setItem(self.table.rowCount()-1, 3, item)
+                    self.table.setItem(self.table.rowCount()-1, self.col_num_progress, item)
                     # remove button
                     button_rem = QtWidgets.QToolButton()
                     button_rem.setText('X')
                     button_rem.clicked.connect(self.table_delete_row)        
                     self.button_group_rem.addButton(button_rem)
-                    self.table.setIndexWidget(self.table.model().index(self.table.rowCount()-1, 4), button_rem)
+                    self.table.setIndexWidget(self.table.model().index(self.table.rowCount()-1, self.col_num_delete), button_rem)
                     counter += 1
             event.accept()
         else:
@@ -153,44 +179,36 @@ class ConversionWindow(QtWidgets.QMainWindow):
             self.button_group_rem.removeButton(button)
 
     def make_runlist(self):
-        self.runlist = []
+        runlist = []
         for row in range(self.table.rowCount()):
-            entries = [row]
-            for col in range(self.table.columnCount()):
+            entries = []
+            for col in range(self.col_num_progress):
                 item = self.table.item(row, col)
-                if item is None:
-                    continue
-                if col in [0, 1, 2]:
-                    text = item.text()
-                    entries.append(text)
-                if col == 3:
-                    if item.data(QtCore.Qt.ItemDataRole.UserRole+1000) < 100:
-                        self.runlist.append(tuple(entries))
-                    break
+                entries.append(item.text())
+            runlist.append(tuple(entries))
+        return runlist
 
     def on_run_clicked(self):
         # construct runlist from table
-        self.make_runlist()
         # iteerate over runs
-        if self.runlist:
-            # disable buttons
-            self.buttons_enable(False)
-            for (idx, h5_master, run_number, gon_kappa) in self.runlist:
-                self.worker = Worker(self.prepare_BioMAX_processing, [str(h5_master), int(run_number), int(gon_kappa)], {'index':int(idx)})
-                self.worker.signals.finished.connect(self.thread_finished)
-                self.worker.signals.aborted.connect(self.thread_aborted)
-                self.worker.signals.update.connect(self.thread_update)
-                self.threads.start(self.worker)
-                # wait until done
-                loop = QtCore.QEventLoop()
-                self.process_finished.connect(loop.quit)
-                loop.exec()
-                if self.stopped:
-                    break
+        # disable buttons
+        self.buttons_enable(False)
+        for idx, run in enumerate(self.make_runlist()):
+            fn_iter, fn_args, total = self.fc_prepare(self, *run)
+            self.worker = Worker(self.thread_run, [fn_iter, fn_args, total, idx], {})
+            self.worker.signals.finished.connect(self.thread_finished)
+            self.worker.signals.update.connect(self.thread_update)
+            self.thread_pool.start(self.worker)
+            # wait until done
+            loop = QtCore.QEventLoop()
+            self.process_finished.connect(loop.quit)
+            loop.exec()
+            if self.flag_stop:
+                break
         # enable buttons
         self.buttons_enable(True)
         # reset stop button
-        self.stopped = False
+        self.flag_stop = False
 
     def buttons_enable(self, toggle=False):
         self.btn_stop.setEnabled(not toggle)
@@ -198,179 +216,51 @@ class ConversionWindow(QtWidgets.QMainWindow):
         for btn in self.button_group_rem.buttons():
             btn.setEnabled(toggle)
 
-    def thread_update(self, index, value):
+    def thread_update(self, row, value):
         self.processed.append(value)
         self.progress = min(max(int(len(self.processed) / self.progress_total * 100), 1), 99)
-        self.table.item(index, 3).setData(QtCore.Qt.ItemDataRole.UserRole+1000, self.progress)
-    
-    def thread_aborted(self, index):
-        # negative progress triggers red coloring of progress bar 
-        self.table.item(index, 3).setData(QtCore.Qt.ItemDataRole.UserRole+1000, -self.progress)
-        self.thread_cleanup()
+        self.table.item(row, self.col_num_progress).setData(QtCore.Qt.ItemDataRole.UserRole+1000, self.progress)
 
-    def thread_finished(self, index):
-        # any progress value above max (100) triggers green coloring of progress bar 
-        self.table.item(index, 3).setData(QtCore.Qt.ItemDataRole.UserRole+1000, 999)
+    def thread_finished(self, row, success):
+        if success:
+            # any progress value above max (100) triggers green coloring of progress bar 
+            self.table.item(row, self.col_num_progress).setData(QtCore.Qt.ItemDataRole.UserRole+1000, 999)
+        else:
+            # negative progress triggers red coloring of progress bar 
+            self.table.item(row, self.col_num_progress).setData(QtCore.Qt.ItemDataRole.UserRole+1000, -self.progress)
         self.thread_cleanup()
 
     def thread_cleanup(self):
         # wait for pool to finish
-        self.threads.clear()
-        self.threads.waitForDone()
+        self.thread_pool.clear()
+        self.thread_pool.waitForDone()
         self.process_finished.emit()
 
-    def thread_abort(self):
-        self.stopped = True
+    def thread_stop(self):
+        self.flag_stop = True
 
-    def prepare_BioMAX_processing(self, h5_master, run_number, gon_kappa, index=None):
-        # BioMAX Dectris EIGER2 CdTe 16M D023193
-        h5_paths = {'dat_images':'entry/data/',
-                    'src_beamline_name':'entry/instrument/name',
-                    'src_facility_name':'entry/source/name',
-                    'src_facility_type':'entry/source/type',
-                    'src_wavelength':'entry/instrument/beam/incident_wavelength',
-                    'det_bc_x':'entry/instrument/detector/beam_center_x',
-                    'det_bc_y':'entry/instrument/detector/beam_center_y',
-                    'det_distance':'entry/instrument/detector/detector_distance',
-                    'det_frame_time':'entry/instrument/detector/frame_time',
-                    'det_bit_depth':'entry/instrument/detector/bit_depth_image',
-                    'det_id':'entry/instrument/detector/detector_number',
-                    'det_desc':'entry/instrument/detector/description',
-                    'det_pxs_x':'entry/instrument/detector/x_pixel_size',
-                    'det_pxs_y':'entry/instrument/detector/y_pixel_size',
-                    'det_px_x':'entry/instrument/detector/detectorSpecific/x_pixels_in_detector',
-                    'det_px_y':'entry/instrument/detector/detectorSpecific/y_pixels_in_detector',
-                    'sensor_material':'entry/instrument/detector/sensor_material',
-                    'sensor_thickness':'entry/instrument/detector/sensor_thickness',
-                    'gon_scan_width':'entry/sample/goniometer/omega_range_average',
-                    'gon_omega_start':'entry/sample/goniometer/omega',
-                    'gon_omega_end':'entry/sample/goniometer/omega_end',
-                    'gon_omega':'entry/sample/transformations/Omega',
-                    }
-
-        par = {}
-        par['h5_file'] = h5_master
-        par['overwrite'] = self.rdo_overwrite.isChecked()
-
-        with h5py.File(par['h5_file'], 'r') as h5f:
-            for key, path in h5_paths.items():
-                if key == 'dat_images':
-                    par[key] = list()
-                    for end in list(h5f[path].keys()):
-                        link = os.path.join(path, end)
-                        # check if the files are available or None
-                        if not h5f.get(link, default=None) is None:
-                            par[key].append({'link':link, 'num':len(h5f[link])})
-                elif path in h5f:
-                    value = h5f[path][()]
-                    if isinstance(value, np.bytes_):
-                        par[key] = value.decode()
-                    elif isinstance(value, float) or isinstance(value, np.floating):
-                        par[key] = np.round(float(value), 6)
-                    elif isinstance(value, int) or isinstance(value, np.integer):
-                        par[key] = int(value)
-                    else:
-                        par[key] = value
-
-        assert par['det_pxs_x'] == par['det_pxs_y'], 'Pixel sizes are not equal!'
-        par['det_pxs'] = par['det_pxs_x']
-
-        if 'JUNGFRAU' in par['det_desc']:
-            par['gon_scan_width'] = np.round(np.mean(par['gon_omega'][1:]-par['gon_omega'][:-1]), 6)
-            par['gon_omega_start'] = np.round(par['gon_omega'], 6)
-            par['gon_omega_end'] = np.round(np.append(par['gon_omega'][1:], np.array([par['gon_omega'][-1]+par['gon_scan_width']])), 6)
-            # Bruker/APEX doesn't support the JUNGFRAU detector
-            # so we tell it to use the EIGER settings
-            # e.g. HPAD, 10/37 px gaps
-            # APEX only parses for EIGER in the name
-            par['det_name'] = 'JUNGFRAU(EIGER2)'
-            # *** FUTURE ***
-            # figure out a way to calculate the efficiency fast (without imports)
-            # we know energy, material and thickness
-            par['sensor_efficiency'] = 1.0
-        elif 'EIGER2' in par['det_desc']:
-            par['det_name'] = 'EIGER2'
-            par['sensor_efficiency'] = 1.0
-        else:
-            print('Detector not supported!')
-            return
-
-        par['user_name'] = '?'
-        par['sample_name'] = '?'
-        par['sample_number'] = 0
-        
-        temp_path, temp_name = os.path.split(par['h5_file'])
-        # get run number from h5-file name
-        # e.g. sample1-crystal2_3_master.h5
-        #  - remove the extension
-        #  - remove '_master'
-        #  - reverse the string
-        #  - split once at '_'
-        par['frm_run'], par['frm_name'] = (os.path.splitext(temp_name)[0]).removesuffix('_master')[::-1].split('_', 1)
-        par['frm_name'] = par['frm_name'][::-1]
-        par['frm_run'] = run_number
-        # sum images to 0.5 degree scan frames
-        #  - save storage space
-        #  - frame queue in SAINT is memory limited (> EIGER2 16M)
-        par['frm_sum'] = int(round(0.5 / par['gon_scan_width'], 0))
-        # mini-kappa angle in degrees
-        par['kappa'] = gon_kappa
-        # mini-kappa alpha angle in degrees
-        par['alpha'] = 24.0
-        # target sfrm directory
-        par['frm_path'] = os.path.join(temp_path, f'{par["frm_name"]}_sfrm')
-        # get max vlaue (16 or 32 bit images) to flag dead pixels
-        par['det_max_counts'] = 2**par['det_bit_depth']-1
-        # total number of images in h5-file
-        par['dat_images_num'] = sum([i['num'] for i in par['dat_images']])
-        # Bruker convention
-        # detector [0,0] is lower left
-        # numpy [0,0] is upper left
-        par['det_bc_y'] = par['det_px_y'] - par['det_bc_y']
-        
-        # create the output directory
-        if not os.path.exists(par['frm_path']):
-            os.mkdir(par['frm_path'])
-        
-        # prepare a SAINT integration mask (X-ray Aperture, xa) file
-        prepare_saint_mask(par['h5_file'], par['dat_images'][0]['link'], par)
-
-        # todo: total number of images to be converted
-        assert par['dat_images_num'] % par['frm_sum'] == 0, 'Number of images must be an integer multiple of image summation!'
-        self.progress_total = par['dat_images_num'] // par['frm_sum']
+    def thread_run(self, fn_iter, fn_args, total, row):
+        self.progress_total = total
         self.processed = []
-
         with mp.Pool() as self.pool:
-            # the number of the resulting sfrm file
-            # it is assumed that one h5master file contains one run of data
-            # so inum is running continuously over one h5master file
-            frm_num = 0
-            # iterate over the h5files, the enumeration (idx) is needed to get the
-            # number of images stored in this h5file (h5inum[idx]) to end the while loop
-            for h5_num in par['dat_images']:
-                # index for the current slice, slice from idx to idx + par['sfrm_sum']
-                # the slice is summed and converted to sfrm
-                h5_start = 0
-                h5_end = h5_num['num'] - par['frm_sum']
-                h5_step = h5_num['num'] // par['frm_sum']
-                assert h5_num['num'] % par['frm_sum'] == 0, 'Number of images must be an integer multiple of image summation!'
-                for h5_idx in np.linspace(h5_start, h5_end, h5_step, dtype=int):
-                    frm_num += 1
-                    # run the conversion of the slice in parallel
-                    self.pool.apply_async(convert_to_sfrm, args=(h5_num['link'], h5_idx, frm_num, par), callback=lambda x: self.worker.signals.update.emit(index, x))
-            # we're done filling the pool
+            idx_write = 0
+            for h5_link, h5_iter in fn_iter:
+                for idx_read in h5_iter:
+                    idx_write += 1
+                    self.pool.apply_async(self.fc_process,
+                                          args=(h5_link, idx_read, idx_write, fn_args),
+                                          callback=lambda x: self.worker.signals.update.emit(row, x))
             self.pool.close()
-            
+            # check for stop
             while len(self.processed) < self.progress_total:
-                if self.stopped:
+                if self.flag_stop:
                     self.pool.terminate()
                     self.pool.join()
-                    return index, False
-                sleep(1)
-            
+                    return row, False
+                sleep(self.mp_timeout)
             # wait for the pool to finish
             self.pool.join()
-            return index, True
+            return row, True
 
 class Worker(QtCore.QRunnable):
     def __init__(self, fn_funct, fn_args, fn_kwargs):
@@ -393,11 +283,7 @@ class Worker(QtCore.QRunnable):
     @QtCore.pyqtSlot()
     def run(self):
         # funct: returns int (index), bool (success)
-        index, success = self.funct(*self.args, **self.kwargs)
-        if success:
-            self.signals.finished.emit(index, success)
-        else:
-            self.signals.aborted.emit(index, success)
+        self.signals.finished.emit(*self.funct(*self.args, **self.kwargs))
     
     @QtCore.pyqtSlot()
     def update(self, index, value):
@@ -421,7 +307,7 @@ class ProgressDelegate(QtWidgets.QStyledItemDelegate):
         opt.rect = option.rect
         opt.minimum = 0
         opt.maximum = 100
-        opt.progress = min(abs(progress), 100)
+        opt.progress = min(abs(progress), opt.maximum)
         opt.text = f'{opt.progress}%'
         opt.textVisible = True
         if progress > opt.maximum:
@@ -855,16 +741,147 @@ def convert_to_sfrm(h5_path, h5_idx, frm_num, par):
     write_bruker_frame(frm_name, header, frm_data)
     return True
 
-def create_application():
-    app = QtWidgets.QApplication(sys.argv)
-    font = QtGui.QFont()
-    font.setStyleHint(QtGui.QFont.StyleHint.Monospace) 
-    app.setFont(font)
-    app.setStyle("fusion")
-    return app
+def prepare_conversion(self, h5_file, run_number, gon_kappa):
+    # BioMAX Dectris EIGER2 CdTe 16M D023193
+    h5_paths = {'dat_images':'entry/data/',
+                'src_beamline_name':'entry/instrument/name',
+                'src_facility_name':'entry/source/name',
+                'src_facility_type':'entry/source/type',
+                'src_wavelength':'entry/instrument/beam/incident_wavelength',
+                'det_bc_x':'entry/instrument/detector/beam_center_x',
+                'det_bc_y':'entry/instrument/detector/beam_center_y',
+                'det_distance':'entry/instrument/detector/detector_distance',
+                'det_frame_time':'entry/instrument/detector/frame_time',
+                'det_bit_depth':'entry/instrument/detector/bit_depth_image',
+                'det_id':'entry/instrument/detector/detector_number',
+                'det_desc':'entry/instrument/detector/description',
+                'det_pxs_x':'entry/instrument/detector/x_pixel_size',
+                'det_pxs_y':'entry/instrument/detector/y_pixel_size',
+                'det_px_x':'entry/instrument/detector/detectorSpecific/x_pixels_in_detector',
+                'det_px_y':'entry/instrument/detector/detectorSpecific/y_pixels_in_detector',
+                'sensor_material':'entry/instrument/detector/sensor_material',
+                'sensor_thickness':'entry/instrument/detector/sensor_thickness',
+                'gon_scan_width':'entry/sample/goniometer/omega_range_average',
+                'gon_omega_start':'entry/sample/goniometer/omega',
+                'gon_omega_end':'entry/sample/goniometer/omega_end',
+                'gon_omega':'entry/sample/transformations/Omega',
+                }
+
+    par = {}
+    par['h5_file'] = h5_file
+    par['overwrite'] = self.rdo_overwrite.isChecked()
+
+    with h5py.File(par['h5_file'], 'r') as h5f:
+        for key, path in h5_paths.items():
+            if key == 'dat_images':
+                par[key] = list()
+                for end in list(h5f[path].keys()):
+                    link = os.path.join(path, end)
+                    # check if the files are available or None
+                    if h5f.get(link, default=None) is not None:
+                        par[key].append({'link':link, 'num':len(h5f[link])})
+            elif path in h5f:
+                value = h5f[path][()]
+                if isinstance(value, np.bytes_):
+                    par[key] = value.decode()
+                elif isinstance(value, float) or isinstance(value, np.floating):
+                    par[key] = np.round(float(value), 6)
+                elif isinstance(value, int) or isinstance(value, np.integer):
+                    par[key] = int(value)
+                else:
+                    par[key] = value
+
+    assert par['det_pxs_x'] == par['det_pxs_y'], 'Pixel sizes are not equal!'
+    par['det_pxs'] = par['det_pxs_x']
+
+    if 'JUNGFRAU' in par['det_desc']:
+        par['gon_scan_width'] = np.round(np.mean(par['gon_omega'][1:]-par['gon_omega'][:-1]), 6)
+        par['gon_omega_start'] = np.round(par['gon_omega'], 6)
+        par['gon_omega_end'] = np.round(np.append(par['gon_omega'][1:], np.array([par['gon_omega'][-1]+par['gon_scan_width']])), 6)
+        # Bruker/APEX doesn't support the JUNGFRAU detector
+        # so we tell it to use the EIGER settings
+        # e.g. HPAD, 10/37 px gaps
+        # APEX only parses for EIGER in the name
+        par['det_name'] = 'JUNGFRAU(EIGER2)'
+        # *** FUTURE ***
+        # figure out a way to calculate the efficiency fast (without imports)
+        # we know energy, material and thickness
+        par['sensor_efficiency'] = 1.0
+    elif 'EIGER2' in par['det_desc']:
+        par['det_name'] = 'EIGER2'
+        par['sensor_efficiency'] = 1.0
+    else:
+        print('Detector not supported!')
+        return
+
+    par['user_name'] = '?'
+    par['sample_name'] = '?'
+    par['sample_number'] = 0
+    
+    temp_path, temp_name = os.path.split(par['h5_file'])
+    # get run number from h5-file name
+    # e.g. sample1-crystal2_3_master.h5
+    #  - remove the extension
+    #  - remove '_master'
+    #  - reverse the string
+    #  - split once at '_'
+    par['frm_run'], par['frm_name'] = (os.path.splitext(temp_name)[0]).removesuffix('_master')[::-1].split('_', 1)
+    par['frm_name'] = par['frm_name'][::-1]
+    par['frm_run'] = int(run_number)
+    # sum images to 0.5 degree scan frames
+    #  - save storage space
+    #  - frame queue in SAINT is memory limited (> EIGER2 16M)
+    par['frm_sum'] = int(round(0.5 / par['gon_scan_width'], 0))
+    # mini-kappa angle in degrees
+    par['kappa'] = float(gon_kappa)
+    # mini-kappa alpha angle in degrees
+    par['alpha'] = 24.0
+    # target sfrm directory
+    par['frm_path'] = os.path.join(temp_path, f'{par["frm_name"]}_sfrm')
+    # get max vlaue (16 or 32 bit images) to flag dead pixels
+    par['det_max_counts'] = 2**par['det_bit_depth']-1
+    # total number of images in h5-file
+    par['dat_images_num'] = sum([i['num'] for i in par['dat_images']])
+    # Bruker convention
+    # detector [0,0] is lower left
+    # numpy [0,0] is upper left
+    par['det_bc_y'] = par['det_px_y'] - par['det_bc_y']
+    
+    # create the output directory
+    if not os.path.exists(par['frm_path']):
+        os.mkdir(par['frm_path'])
+    
+    # prepare a SAINT integration mask (X-ray Aperture, xa) file
+    prepare_saint_mask(par['h5_file'], par['dat_images'][0]['link'], par)
+
+    # todo: total number of images to be converted
+    assert par['dat_images_num'] % par['frm_sum'] == 0, 'Number of images must be an integer multiple of image summation!'
+    progress_total = par['dat_images_num'] // par['frm_sum']
+
+    to_process = []
+    for h5_num in par['dat_images']:
+        h5_start = 0
+        h5_end = h5_num['num'] - par['frm_sum']
+        h5_step = h5_num['num'] // par['frm_sum']
+        assert h5_num['num'] % par['frm_sum'] == 0, 'Number of images must be an integer multiple of image summation!'
+        h5_iter = np.linspace(h5_start, h5_end, h5_step, dtype=int)
+        to_process.append((h5_num['link'], h5_iter))
+    return to_process, par, progress_total
 
 if __name__ == '__main__':
-    app = create_application()
-    win = ConversionWindow()
+    app = QtWidgets.QApplication(sys.argv)
+    font = QtGui.QFont()
+    font.setStyleHint(QtGui.QFont.StyleHint.Monospace)
+    app.setFont(font)
+    app.setStyle('fusion')
+    win = ConversionWindow(title=f'Convert MicroMAX / BioMAX to .sfrm, version {__version__} (released {__date__})',
+                           fn_suffix='_master.h5',
+                           header_ext=['Run', 'Kappa'],
+                           # 'add': add to counter
+                           # 'mul': multiply with counter
+                           # None : insert value
+                           header_val=[('add', 1), ('mul', 50)],
+                           fc_prepare=prepare_conversion,
+                           fc_process=convert_to_sfrm)
     win.show()
     sys.exit(app.exec())
