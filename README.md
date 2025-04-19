@@ -1,4 +1,4 @@
-# BioMAX2sfrm, version 1.0.2 (released 19.04.2025)
+# convert2sfrm, version 1.0.2 (released 19.04.2025)
 An easy-to-use GUI to convert [BioMAX](https://www.maxiv.lu.se/beamlines-accelerators/beamlines/biomax/) ([EIGER2](https://www.dectris.com/en/detectors/x-ray-detectors/eiger2/)) or [MicroMAX](https://www.maxiv.lu.se/beamlines-accelerators/beamlines/micromax/) ([EIGER2](https://www.dectris.com/en/detectors/x-ray-detectors/eiger2/)/[JUNGFRAU](https://www.psi.ch/en/lxn/jungfrau)) data to the [Bruker](https://www.bruker.com) ***.sfrm*** format. It makes extensive use of hardcoded defaults to streamline the experience. If you are looking to convert [PILATUS3](https://www.dectris.com/en/support/manuals-docs/pilatus3-x-cdte-for-synchrotron/) data, I have [good news](https://github.com/LennardKrause/p3fc) for you too!
 
 >[!IMPORTANT]
@@ -6,12 +6,12 @@ An easy-to-use GUI to convert [BioMAX](https://www.maxiv.lu.se/beamlines-acceler
 > 
 > New build released, please read below.
 
-![Example picture of the conversion window.](/Assets/BioMAX2sfrm.png)
+![Example picture of the conversion window.](/assets/BioMAX2sfrm.png)
 
 ## How to use
 ### General
- - Download `biomax2sfrm-1.0.2-py3-none-any.whl`
- - Install using `python3 -m pip install /path/to/biomax2sfrm-1.0.2-py3-none-any.whl`
+ - Download `convert2sfrm-1.0.2-py3-none-any.whl`
+ - Install using `python3 -m pip install /path/to/convert2sfrm-1.0.2-py3-none-any.whl`
  - Run by typing `BioMAX2sfrm` in a terminal
  - Drag and drop the h5 master files (****_master.h5***) onto the window
  - You can drop all files, only ****_master.h5*** files will be added
