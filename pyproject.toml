@@ -1,11 +1,11 @@
 [project]
-name = "BioMAX2sfrm"
+name = "convert2sfrm"
 dynamic = ["version"]
 authors = [
   { name="Lennard Krause", email="lkrause@chem.au.dk" },
 ]
 
-description = "An easy-to-use GUI to convert BioMAX (EIGER2) or MicroMAX (EIGER2/JUNGFRAU) data to the Bruker .sfrm format."
+description = "An easy-to-use GUI to convert EIGER2 or JUNGFRAU data to the Bruker .sfrm format."
 readme = "README.md"
 requires-python = ">=3.7"
 dependencies = ["numpy >= 1.26",
@@ -24,10 +24,10 @@ classifiers = [
 ]
 
 [tool.setuptools.dynamic]
-version = {attr = "BioMAX2sfrm.__version__"}
+version = {attr = "convert2sfrm.__version__"}
 
 [project.urls]
-"Homepage" = "https://github.com/LennardKrause/BioMAX2sfrm"
+"Homepage" = "https://github.com/LennardKrause/convert2sfrm"
 
 [project.scripts]
-BioMAX2sfrm = "BioMAX2sfrm.scripts:run"
+BioMAX2sfrm = "convert2sfrm.scripts:BioMAX2sfrm"
