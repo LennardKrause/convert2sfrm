@@ -4,7 +4,7 @@ An easy-to-use GUI to convert [BioMAX](https://www.maxiv.lu.se/beamlines-acceler
 >[!IMPORTANT]
 > This is work in progress, please make sure to reach out if you run into trouble
 
-![Example picture of the conversion window.](/BioMAX2sfrm.png)
+![Example picture of the conversion window.](/Assets/BioMAX2sfrm.png)
 
 ## How to use
 ### General
