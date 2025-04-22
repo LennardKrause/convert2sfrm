@@ -11,7 +11,7 @@ An easy-to-use GUI to convert [BioMAX](https://www.maxiv.lu.se/beamlines-acceler
 ## How to use
 ### General
  - Download `convert2sfrm-1.0.3-py3-none-any.whl`
- - Install using `python3 -m pip install /path/to/convert2sfrm-1.0.2-py3-none-any.whl`
+ - Install using `python3 -m pip install /path/to/convert2sfrm-1.0.3-py3-none-any.whl`
  - Run by typing `BioMAX2sfrm` in a terminal
  - Drag and drop the h5 master files (****_master.h5***) onto the window
  - You can drop all files, only ****_master.h5*** files will be added
