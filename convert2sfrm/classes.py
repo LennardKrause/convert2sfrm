@@ -9,6 +9,7 @@ class ConversionWindow(QtWidgets.QMainWindow):
         super().__init__()
         # variables
         self.title = kwargs.get('title', 'None')
+        self.tab_proc_name = kwargs.get('tab_proc_name', 'Process')
         self.header_ext = kwargs.get('header_ext', [])
         self.header_val = kwargs.get('header_val', [])
         self.fn_suffix = kwargs.get('fn_suffix', '_master.h5')
@@ -45,9 +46,9 @@ class ConversionWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(tabs)
 
         # add frame and layout
-        layout = QtWidgets.QVBoxLayout()
-        conv = QtWidgets.QFrame()
-        conv.setLayout(layout)
+        proc_layout = QtWidgets.QVBoxLayout()
+        proc_frame = QtWidgets.QFrame()
+        proc_frame.setLayout(proc_layout)
 
         # add table widget
         self.table = QtWidgets.QTableWidget()
@@ -62,16 +63,15 @@ class ConversionWindow(QtWidgets.QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.Stretch)
         for i in range(1, self.header_len):
             self.table.horizontalHeader().setSectionResizeMode(i, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        progress_bar = ProgressDelegate(self.table)
-        self.table.setItemDelegateForColumn(self.col_num_progress, progress_bar)
-        layout.addWidget(self.table)
+        self.table.setItemDelegateForColumn(self.col_num_progress, ProgressDelegate(self.table))
+        proc_layout.addWidget(self.table)
 
         # add start and stop buttons
         self.btn_box = QtWidgets.QGroupBox()
         self.btn_box_layout = QtWidgets.QHBoxLayout()
         self.btn_box.setLayout(self.btn_box_layout)
-        self.btn_conv = QtWidgets.QPushButton('Start')
-        self.btn_conv.clicked.connect(self.on_run_clicked)
+        self.btn_start = QtWidgets.QPushButton('Start')
+        self.btn_start.clicked.connect(self.on_run_clicked)
         self.btn_stop = QtWidgets.QPushButton('Stop')
         self.btn_stop.setEnabled(False)
         self.btn_stop.setStyleSheet('QPushButton:enabled{background-color: red;}')
@@ -79,19 +79,21 @@ class ConversionWindow(QtWidgets.QMainWindow):
         self.rdo_overwrite = QtWidgets.QRadioButton('Overwrite')
         self.rdo_overwrite.setChecked(False)
         self.btn_box_layout.addWidget(self.btn_stop, 1)
-        self.btn_box_layout.addWidget(self.btn_conv, 10)
+        self.btn_box_layout.addWidget(self.btn_start, 10)
         self.btn_box_layout.addWidget(self.rdo_overwrite, 1)
-        layout.addWidget(self.btn_box)
+        proc_layout.addWidget(self.btn_box)
 
-        # add frame and layout
-        help = QtWidgets.QScrollArea()
+        # add help text and scrollarea
         help_text = QtWidgets.QLabel()
+        help_text.setWordWrap(True)
+        help_text.setContentsMargins(6, 6, 6, 6)
         help_text.setText('<b><h1>How to use</h1></b>'
                           '<ul><h2>General</h2>'
                           '<li> Drag and drop the h5 master files (<i>*_master.h5</i>) onto the window </li>'
                           '<li> You can drop all files, only <i>*_master.h5</i> files will be added </li>'
                           '<li> You can change the run number and the kappa angle for each run </li>'
                           '<li> The rows (runs) will be converted successively using all the cores you have </li>'
+                          '<li> The frames will be converted into the <i>*_sfrm</i> folder </li>'
                           '</ul>'
                           '<ul><h2>Buttons</h2>'
                           '<li> Click <b>Convert</b> to start the conversion </li>'
@@ -100,13 +102,21 @@ class ConversionWindow(QtWidgets.QMainWindow):
                           '<li> Untick <b>Overwrite</b> if you want to save time finishing previously aborted conversions </li>'
                           '</ul>'
                           '<ul><h2>Features</h2>'
-                          '<li> If multiple <i>*_master.h5</i> files are dropped together,<br> they have their run number and kappa angle incemented automatically </li>'
+                          '<li> If multiple <i>*_master.h5</i> files are dropped together, they have their run number and kappa angle incremented automatically </li>'
+                          '</ul>'
+                          '<ul><h2>Future</h2>'
+                          '<li> Once the kappa angle is stored in the h5 the angle will be set automatically </li>'
+                          '<li> Figure out a way to calculate the sensor efficiency fast (without imports) we know energy, material and thickness </li>'
+                          '<li> SAINT does not support the JUNGFRAU detector so we tell it to use the EIGER settings e.g. HPAD, 10/37 px gaps by setting the name to: "JUNGFRAU(EIGER2)" as APEX only parses for "EIGER" in the name and the JUNGFRAU bases on the EIGER2 layout </li>'
                           '</ul>'
                           )
-        help.setWidget(help_text)
-
-        tabs.addTab(conv, 'Convert')
-        tabs.addTab(help, 'Help')
+        
+        help_scroll = QtWidgets.QScrollArea()
+        help_scroll.setWidgetResizable(True)
+        help_scroll.setWidget(help_text)
+        
+        tabs.addTab(proc_frame, self.tab_proc_name)
+        tabs.addTab(help_scroll, 'Help')
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -116,38 +126,41 @@ class ConversionWindow(QtWidgets.QMainWindow):
 
     def dropEvent(self, event):
         if event.mimeData().hasUrls():
-            counter = 0
-            for url in event.mimeData().urls():
-                file_path = url.toLocalFile()
-                if file_path and file_path.endswith(self.fn_suffix):
-                    self.table.setRowCount(self.table.rowCount() + 1)
-                    self.table.setItem(self.table.rowCount()-1, 0, QtWidgets.QTableWidgetItem(file_path))
-                    if self.header_len > 3:
-                        for i, (op, val) in enumerate(self.header_val):
-                            if op == 'add':
-                                entry = counter+val
-                            elif op == 'mul':
-                                entry = counter*val
-                            else:
-                                entry = val
-                            self.table.setItem(self.table.rowCount()-1, i+1, QtWidgets.QTableWidgetItem(str(entry)))
-                    # progress bar
-                    bar = QtWidgets.QTableWidgetItem()
-                    bar.setData(QtCore.Qt.ItemDataRole.UserRole+1000, 0)
-                    item = QtWidgets.QTableWidgetItem(bar)
-                    item.setFlags(~QtCore.Qt.ItemFlag.ItemIsEditable)
-                    self.table.setItem(self.table.rowCount()-1, self.col_num_progress, item)
-                    # remove button
-                    button_rem = QtWidgets.QToolButton()
-                    button_rem.setText('X')
-                    button_rem.clicked.connect(self.table_delete_row)        
-                    self.button_group_rem.addButton(button_rem)
-                    self.table.setIndexWidget(self.table.model().index(self.table.rowCount()-1, self.col_num_delete), button_rem)
-                    counter += 1
+            self.table_add_row(event.mimeData().urls())
             event.accept()
         else:
             event.ignore()
     
+    def table_add_row(self, urls):
+        counter = 0
+        for url in urls:
+            file_path = url.toLocalFile()
+            if file_path and file_path.endswith(self.fn_suffix):
+                self.table.setRowCount(self.table.rowCount() + 1)
+                self.table.setItem(self.table.rowCount()-1, 0, QtWidgets.QTableWidgetItem(file_path))
+                if self.header_len > 3:
+                    for i, (op, val) in enumerate(self.header_val):
+                        if op == 'add':
+                            entry = counter+val
+                        elif op == 'mul':
+                            entry = counter*val
+                        else:
+                            entry = val
+                        self.table.setItem(self.table.rowCount()-1, i+1, QtWidgets.QTableWidgetItem(str(entry)))
+                # progress bar
+                bar = QtWidgets.QTableWidgetItem()
+                bar.setData(QtCore.Qt.ItemDataRole.UserRole+1000, 0)
+                item = QtWidgets.QTableWidgetItem(bar)
+                item.setFlags(~QtCore.Qt.ItemFlag.ItemIsEditable)
+                self.table.setItem(self.table.rowCount()-1, self.col_num_progress, item)
+                # remove button
+                button_rem = QtWidgets.QToolButton()
+                button_rem.setText('X')
+                button_rem.clicked.connect(self.table_delete_row)        
+                self.button_group_rem.addButton(button_rem)
+                self.table.setIndexWidget(self.table.model().index(self.table.rowCount()-1, self.col_num_delete), button_rem)
+                counter += 1
+
     def table_delete_row(self):
         button = self.sender()
         if button:
@@ -189,7 +202,7 @@ class ConversionWindow(QtWidgets.QMainWindow):
 
     def buttons_enable(self, toggle=False):
         self.btn_stop.setEnabled(not toggle)
-        self.btn_conv.setEnabled(toggle)
+        self.btn_start.setEnabled(toggle)
         for btn in self.button_group_rem.buttons():
             btn.setEnabled(toggle)
 

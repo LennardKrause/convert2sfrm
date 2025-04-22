@@ -318,7 +318,6 @@ def kappa_to_euler(k_omg, kappa, alpha, k_phi):
      alternative delta:
      r_delta_ = np.arcsin(np.cos(np.deg2rad(alpha)) * np.sin(np.deg2rad(kappa) / 2.0) / np.cos(r_e_chi / 2.0))
     '''
-    import numpy as np
     r_k_omg = np.deg2rad(k_omg)
     r_k_phi = np.deg2rad(k_phi)
     r_e_chi = 2.0 * np.arcsin(np.sin(np.deg2rad(kappa) / 2.0) * np.sin(np.deg2rad(alpha)))
@@ -428,7 +427,7 @@ def convert_to_sfrm(h5_path, h5_idx, frm_num, par):
     write_bruker_frame(frm_name, header, frm_data)
     return True
 
-def prepare_conversion(self, h5_file, run_number, gon_kappa):
+def prepare_BioMAX(self, h5_file, run_number, gon_kappa):
     # BioMAX Dectris EIGER2 CdTe 16M D023193
     h5_paths = {'dat_images':'entry/data/',
                 'src_beamline_name':'entry/instrument/name',
