@@ -1,7 +1,7 @@
 import os
 import collections
-import h5py, hdf5plugin
 import numpy as np
+import h5py, hdf5plugin
 
 def prepare_saint_mask(h5file, h5path, par):
     # open the h5 file and read the first image
@@ -327,7 +327,7 @@ def kappa_to_euler(k_omg, kappa, alpha, k_phi):
     e_chi = np.round(np.rad2deg(r_e_chi), 5)
     return e_omg, e_phi, e_chi
 
-def convert_to_sfrm(h5_path, h5_idx, frm_num, par):
+def convert_h5_to_sfrm(h5_path, h5_idx, frm_num, par):
     frm_name = '{}_{:02}_{:04}.sfrm'.format(os.path.join(par['frm_path'], par['frm_name']), par['frm_run'], frm_num)
     # Overwrite existing files if overwrite is flagged True
     if not par['overwrite'] and os.path.isfile(frm_name):
@@ -427,7 +427,7 @@ def convert_to_sfrm(h5_path, h5_idx, frm_num, par):
     write_bruker_frame(frm_name, header, frm_data)
     return True
 
-def prepare_BioMAX(self, h5_file, run_number, gon_kappa):
+def prepare_BioMAX(h5_file, run_number, gon_kappa):
     # BioMAX Dectris EIGER2 CdTe 16M D023193
     h5_paths = {'dat_images':'entry/data/',
                 'src_beamline_name':'entry/instrument/name',
@@ -455,7 +455,6 @@ def prepare_BioMAX(self, h5_file, run_number, gon_kappa):
 
     par = {}
     par['h5_file'] = h5_file
-    par['overwrite'] = self.rdo_overwrite.isChecked()
 
     with h5py.File(par['h5_file'], 'r') as h5f:
         for key, path in h5_paths.items():
@@ -517,7 +516,7 @@ def prepare_BioMAX(self, h5_file, run_number, gon_kappa):
     # sum images to 0.5 degree scan frames
     #  - save storage space
     #  - frame queue in SAINT is memory limited (> EIGER2 16M)
-    par['frm_sum'] = int(round(0.5 / par['gon_scan_width'], 0))
+    par['frm_sum'] = max(int(round(0.5 / par['gon_scan_width'], 0)), 1)
     # mini-kappa angle in degrees
     par['kappa'] = float(gon_kappa)
     # mini-kappa alpha angle in degrees
@@ -553,3 +552,312 @@ def prepare_BioMAX(self, h5_file, run_number, gon_kappa):
         h5_iter = np.linspace(h5_start, h5_end, h5_step, dtype=int)
         to_process.append((h5_num['link'], h5_iter))
     return to_process, par, progress_total
+
+def convert_h5_to_cbf(h5_path, h5_idx, frm_num, par):
+    import fabio.cbfimage as cbfimage
+    frm_name = '{}_{:02}_{:04}.cbf'.format(os.path.join(par['frm_path'], par['frm_name']), par['frm_run'], frm_num)
+    # Overwrite existing files if overwrite is flagged True
+    if not par['overwrite'] and os.path.isfile(frm_name):
+        return False
+        
+    # open the h5 file and sum the images in the given range
+    with h5py.File(par['h5_file'], 'r') as h5f:
+        frm_data = np.sum(h5f[h5_path][h5_idx:h5_idx+par['frm_sum'],:,:], axis=0)
+
+    # set bad pixels to zero
+    # this is only cosmetic but makes the indexing / visual analysis easier
+    # as long as the xa mask files are used during integration
+    # these pixels are masked and properly handled with
+    frm_data[frm_data == par['det_max_counts'] * par['frm_sum']] = 0
+    frm_data[frm_data < 0] = 0
+
+    # scan parameters
+    # increment, exposure time, start and end angle of the omega scan
+    frm_idx = (frm_num - 1) * par['frm_sum']
+    scn_inc = par['gon_scan_width'] * par['frm_sum']
+    scn_exp = par['det_frame_time'] * par['frm_sum']
+    scn_sta = par['gon_omega_start'][frm_idx]
+    scn_end = par['gon_omega_end'][frm_idx + par['frm_sum'] - 1]
+
+    # convert kappa to euler geometry
+    omg_0, phi_0, chi_0 = kappa_to_euler(scn_sta, par['kappa'], par['alpha'], 0)
+    omg_1, phi_1, chi_1 = kappa_to_euler(scn_end, par['kappa'], par['alpha'], 0)
+
+    # angle correction
+    phi_0 = 0.0 - phi_0
+    phi_1 = 0.0 - phi_1
+    omg_0 = omg_0 - 40.8
+    omg_1 = omg_1 - 40.8
+
+    cbfimage.cbfimage(data=frm_data).write(frm_name)
+    #fabio.cbfimage.CBFImage(frm_name).header['wavelength'] = par['src_wavelength']
+    #fabio.cbfimage.CBFImage(frm_name).header['distance'] = par['det_distance']
+    #fabio.cbfimage.CBFImage(frm_name).header['exposure_time'] = par['det_frame_time']
+    #fabio.cbfimage.CBFImage(frm_name).header['start_angle'] = omg_0
+    #fabio.cbfimage.CBFImage(frm_name).header['end_angle'] = omg_1
+    #fabio.cbfimage.CBFImage(frm_name).header['phi'] = phi_0
+    #fabio.cbfimage.CBFImage(frm_name).header['chi'] = chi_0
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_increment'] = scn_inc
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_exposure'] = scn_exp
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_start'] = scn_sta
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_end'] = scn_end
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_number'] = frm_num
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_frames'] = par['frm_sum']
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_total'] = par['dat_images_num']
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_type'] = 'omega'
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_range'] = abs(scn_inc)
+    #fabio.cbfimage.CBFImage(frm_name).header['scan_increment'] = scn_inc
+    return True
+
+def read_cbf_gz(fname):
+    '''
+     
+    '''
+    import gzip
+    import re
+    with gzip.open(fname, 'rb') as f:
+        stream = f.read()
+    start = stream.find(b'\x0c\x1a\x04\xd5') +4
+    head = str(stream[:start])
+    size = int(re.search(r'X-Binary-Size:\s+(\d+)', head).group(1))
+    dim1 = int(re.search(r'X-Binary-Size-Fastest-Dimension:\s+(\d+)', head).group(1))
+    dim2 = int(re.search(r'X-Binary-Size-Second-Dimension:\s+(\d+)', head).group(1))
+    data = decByteOffset_np(stream[start:start+size]).reshape((dim2, dim1))
+    return head, data
+
+def decByteOffset_np(stream, dtype="int64"):
+    '''
+    The following code is taken from the FabIO package:
+    Version: fabio-0.9.0
+    Home-page: http://github.com/silx-kit/fabio
+    Author: Henning Sorensen, Erik Knudsen, Jon Wright, Regis Perdreau,
+            Jérôme Kieffer, Gael Goret, Brian Pauw, Valentin Valls
+    '''
+    """
+    Analyze a stream of char with any length of exception:
+                2, 4, or 8 bytes integers
+
+    @param stream: string representing the compressed data
+    @param size: the size of the output array (of longInts)
+    @return: 1D-ndarray
+    """
+    import numpy as np
+    listnpa = []
+    key16 = b"\x80"
+    key32 = b"\x00\x80"
+    key64 = b"\x00\x00\x00\x80"
+    shift = 1
+    while True:
+        idx = stream.find(key16)
+        if idx == -1:
+            listnpa.append(np.frombuffer(stream, dtype="int8"))
+            break
+        listnpa.append(np.frombuffer(stream[:idx], dtype="int8"))
+
+        if stream[idx + 1:idx + 3] == key32:
+            if stream[idx + 3:idx + 7] == key64:
+                # 64 bits int
+                res = np.frombuffer(stream[idx + 7:idx + 15], dtype="int64")
+                listnpa.append(res)
+                shift = 15
+            else:
+                # 32 bits int
+                res = np.frombuffer(stream[idx + 3:idx + 7], dtype="int32")
+                listnpa.append(res)
+                shift = 7
+        else:  # int16
+            res = np.frombuffer(stream[idx + 1:idx + 3], dtype="int16")
+            listnpa.append(res)
+            shift = 3
+        stream = stream[idx + shift:]
+    return np.ascontiguousarray(np.hstack(listnpa), dtype).cumsum()
+
+def get_run_info(basename):
+    # try to get the run and frame number from the filename
+    # any_name_runNum_frmNum is assumed.
+    # maybe except for index error as well!
+    try:
+        _split = basename.split('_')
+        frmTmp = _split.pop()
+        frmLen = len(frmTmp)
+        frmNum = int(frmTmp)
+        runNum = int(_split.pop())
+        stem = '_'.join(_split)
+        return stem, runNum, frmNum, frmLen
+    except ValueError:
+        pass
+    # SP-8 naming convention
+    frmNum = int(basename[-3:])
+    runNum = int(basename[-5:-3])
+    stem = basename[:-6]
+    return stem, runNum, frmNum, 3
+
+def prepare_ESRF(path, *args):
+    import glob
+    fn_kwargs = {}
+    imgs = sorted(glob.glob(os.path.join(path, '*.cbf.gz')))
+    tail = ''
+    while not tail:
+        path, tail = os.path.split(path)
+    sfrm_path = os.path.join(path, '_sfrm')
+    if not os.path.exists(sfrm_path):
+        os.mkdir(sfrm_path)
+    progress_total = len(imgs)
+    to_process = [(sfrm_path, imgs)]
+    return to_process, fn_kwargs, progress_total
+
+def convert_img_to_sfrm(sfrm_path, img_path, *args, **kwargs):
+    '''
+    
+    '''
+    import os, re
+    import numpy as np
+    from datetime import datetime as dt
+    
+    overwrite = kwargs.get('overwrite', False)
+    rotate = kwargs.get('rotate', 0)
+
+    # split path, name and extension
+    cbf_ext, gz = os.path.splitext(img_path)
+    no_ext, cbf = os.path.splitext(cbf_ext)
+    basename = os.path.basename(no_ext)
+    frame_stem, frame_run, frame_num, _ = get_run_info(basename)
+    
+    # output file format: some_name_rr_ffff.sfrm
+    outName = os.path.join(sfrm_path, '{}_{:>02}_{:>04}.sfrm'.format(frame_stem, frame_run, frame_num))
+
+    # check if file exists and overwrite flag
+    if os.path.exists(outName) and not overwrite:
+        return False
+    
+    # read in the frame
+    header, data = read_cbf_gz(img_path)
+
+    # rotate the data if needed
+    data = np.rot90(data, rotate, axes=(1, 0))
+    
+    # the dead areas are flagged -1
+    data[data == -1] = 0
+    # bad pixels are flagged -2
+    data[data == -2] = 0
+    
+    # scale the data to avoid underflow tables
+    baseline_offset = -1 * data.min()
+    data += baseline_offset
+    
+    # extract scan info from cbf header
+
+    def regsearch(pattern, text, num=1, type=float):
+        if match := re.search(pattern, text):
+            return type(match.group(num))
+        else:
+            None
+
+    sca_ext = regsearch(r'Exposure_time\s+(\d+\.\d+)\s+s', header, 1)
+    sca_exp = regsearch(r'Exposure_period\s+(\d+\.\d+)\s+s', header, 1)
+    gon_dxt = regsearch(r'Detector_distance\s+(\d+\.\d+)\s+m', header, 1) * 1000.0
+    src_wav = regsearch(r'Wavelength\s+(\d+\.\d+)\s+A', header, 1)
+    gon_phi = regsearch(r'Phi\s+(-*\d+\.\d+)\s+deg.', header, 1)
+    inc_phi = regsearch(r'Phi_increment\s+(-*\d+\.\d+)\s+deg.', header, 1) or 0.0
+    gon_chi = regsearch(r'Chi\s+(-*\d+\.\d+)\s+deg.', header, 1)
+    inc_chi = regsearch(r'Chi_increment\s+(-*\d+\.\d+)\s+deg.', header, 1) or 0.0
+    gon_kap = regsearch(r'Kappa\s+(-*\d+\.\d+)\s+deg.', header, 1)
+    gon_alp = regsearch(r'Alpha\s+(-*\d+\.\d+)\s+deg.', header, 1) or 24.0
+    gon_omg = regsearch(r'Omega\s+(-*\d+\.\d+)\s+deg.', header, 1)
+    inc_omg = regsearch(r'Omega_increment\s+(-*\d+\.\d+)\s+deg.', header, 1) or 0.0
+    gon_tth = regsearch(r'Detector_2theta\s+(-*\d+\.\d+)\s+deg.', header, 1)
+    det_bcx = regsearch(r'Beam_xy\s+\((\d+\.\d+),\s+(\d+\.\d+)\)\s+pixels', header, 1)
+    det_bcy = regsearch(r'Beam_xy\s+\((\d+\.\d+),\s+(\d+\.\d+)\)\s+pixels', header, 2)
+    
+    # initial frame dimensions are needed to calculate
+    # the beamcenter of the reshaped frame and
+    # adjust the beam center to the Bruker flip
+    # numpy array starts in the upper left corner
+    # Bruker starts lower left
+    beam_y = data.shape[0] - det_bcy
+    beam_x = det_bcx
+
+    # convert kappa to euler
+    if gon_kap is not None:
+        gon_alp = 24.0
+        gon_omg, gon_chi, gon_phi = kappa_to_euler(gon_omg, gon_kap, gon_alp, gon_phi)
+
+    # to Bruker conversion:
+    gon_tth = round(-gon_tth, 4)
+    gon_omg = round(180.0 - gon_omg, 4)
+    inc_omg = round(-inc_omg, 4)
+    gon_chi = round(-gon_chi, 4)
+    inc_chi = round(-inc_chi, 4)
+    gon_phi = round(-gon_phi, 4)
+    inc_phi = round(-inc_phi, 4)
+    
+    # ending positions
+    end_phi = round(gon_phi + inc_phi, 4)
+    end_chi = round(gon_chi + inc_chi, 4)
+    end_omg = round(gon_omg + inc_omg, 4)
+    end_tth = round(gon_tth, 4)
+    
+    # Scan axis (1=2-theta, 2=omega, 3=phi, 4=chi)
+    ang_nam = ['Omega',  'Phi']
+    ang_inc = [inc_omg, inc_phi]
+    ang_sta = [gon_omg, gon_phi]
+    sca_nam, sca_axs, sca_sta, sca_inc = [(ang_nam[i], int(i+2), ang_sta[i], round(v,4)) for i,v in enumerate(ang_inc) if v != 0.0][0]
+    
+    # calculate detector pixel per cm
+    # this is normalized to a 512x512 detector format
+    # EIGER2 pixel size is 0.075 mm 
+    pix_per_512 = round((10.0 / 0.075) * (512.0 / data.shape[1]), 6)
+    
+    # default bruker header
+    header = init_bruker_header()
+    
+    # fill known header items
+    header['NCOLS']      = data.shape[1]                             # Number of pixels per row; number of mosaic tiles in X; dZ/dX
+    header['NROWS']      = data.shape[0]                             # Number of rows in frame; number of mosaic tiles in Y; dZ/dY value
+    header['CENTER']     = [beam_x, beam_y, beam_x, beam_y]          # 
+    header['CCDPARM']    = [0.00, 1.00, 1.00, 1.00, 1169523]         # CCD parameters for computing pixel ESDs; readnoise, e/ADU, e/photon, bias, full scale
+    header['DETPAR']     = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]          # Detector position corrections (Xc,Yc,Dist,Pitch,Roll,Yaw)
+    header['CHEM']       = '?'                                                   
+    header['DETTYPE']    = ['EIGER2-16M', pix_per_512, 0.00, 0, 0.001, 0.0, 0]
+    header['SITE']       = 'ESRF/I19-1'                              # Site name
+    header['MODEL']      = 'Synchrotron'                             # Diffractometer model
+    header['TARGET']     = 'Undulator'                               # X-ray target material)
+    header['USER']       = '?'                                       # Username
+    header['SOURCEK']    = '?'                                       # X-ray source kV
+    header['SOURCEM']    = '?'                                       # Source milliamps
+    header['WAVELEN']    = [src_wav, src_wav, src_wav]               # Wavelengths (average, a1, a2)
+    header['FILENAM']    = basename
+    header['CUMULAT']    = sca_exp                                   # Accumulated exposure time in real hours
+    header['ELAPSDR']    = sca_ext                                   # Requested time for this frame in seconds
+    header['ELAPSDA']    = sca_exp                                   # Actual time for this frame in seconds
+    header['START']      = sca_sta                                   # Starting scan angle value, decimal deg
+    header['ANGLES']     = [gon_tth, gon_omg, gon_phi, gon_chi]      # Diffractometer setting angles, deg. (2Th, omg, phi, chi)
+    header['ENDING']     = [end_tth, end_omg, end_phi, end_chi]      # Setting angles read at end of scan
+    header['TYPE']       = 'Generic {} Scan'.format(sca_nam)         # String indicating kind of data in the frame
+    header['DISTANC']    = float(gon_dxt) / 10.0                     # Sample-detector distance, cm
+    header['RANGE']      = abs(sca_inc)                              # Magnitude of scan range in decimal degrees
+    header['INCREME']    = sca_inc                                   # Signed scan angle increment between frames
+    header['NUMBER']     = frame_num                                 # Number of this frame in series (zero-based)
+    header['NFRAMES']    = '?'                                       # Number of frames in the series
+    header['AXIS']       = sca_axs                                   # Scan axis (1=2-theta, 2=omega, 3=phi, 4=chi)
+    header['LOWTEMP']    = [1, 0, 0]                                 # Low temp flag; experiment temperature*100; detector temp*100
+    header['NEXP']       = [1, 0, baseline_offset, 0, 0]
+    header['MAXXY']      = np.array(np.where(data == data.max()), float)[:, 0]
+    header['MAXIMUM']    = np.max(data)
+    header['MINIMUM']    = np.min(data)
+    header['NCOUNTS']    = [data.sum(), 0]
+    header['NPIXELB']    = [1, 1]                                    # bytes/pixel in main image, bytes/pixel in underflow table
+    header['NOVER64']    = [data[data > 64000].shape[0], 0, 0]
+    header['NSTEPS']     = 1                                         # steps or oscillations in this frame
+    header['COMPRES']    = 'NONE'                                    # compression scheme if any
+    header['TRAILER']    = 0                                         # byte pointer to trailer info
+    header['LINEAR']     = [1.00, 0.00]     
+    header['PHD']        = [1.00, 0.00]
+    header['OCTMASK']    = [0, 0, 0, 1023, 1023, 2046, 1023, 1023]
+    header['DISPLIM']    = [0.0, 63.0]                               # Recommended display contrast window settings
+    header['FILTER2']    = [90.0, 0.0, 0.0, 1.0]                     # Monochromator 2-theta, roll (both deg)
+    #header['CREATED']    = [dt.fromtimestamp(os.path.getmtime(img_path)).strftime('%Y-%m-%d %H:%M:%S')]# use creation time of raw data!
+    
+    # write the frame
+    write_bruker_frame(outName, header, data)
+    return True
