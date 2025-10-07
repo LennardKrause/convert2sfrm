@@ -184,8 +184,9 @@ class ConversionWindow(QtWidgets.QMainWindow):
         # disable buttons
         self.buttons_enable(False)
         for idx, run in enumerate(self.make_runlist()):
-            fn_iter, fn_args, total = self.fc_prepare(self, *run)
-            self.worker = Worker(self.thread_run, [fn_iter, fn_args, total, idx], {})
+            fn_iter, fn_kwargs, total = self.fc_prepare(*run)
+            fn_kwargs.update({'overwrite': self.rdo_overwrite.isChecked()})
+            self.worker = Worker(self.thread_run, [fn_iter, fn_kwargs, total, idx], {})
             self.worker.signals.finished.connect(self.thread_finished)
             self.worker.signals.update.connect(self.thread_update)
             self.thread_pool.start(self.worker)
@@ -229,7 +230,7 @@ class ConversionWindow(QtWidgets.QMainWindow):
     def thread_stop(self):
         self.flag_stop = True
 
-    def thread_run(self, fn_iter, fn_args, total, row):
+    def thread_run(self, fn_iter, fn_kwargs, total, row):
         self.progress_total = total
         self.processed = []
         with mp.Pool() as self.pool:
@@ -238,7 +239,7 @@ class ConversionWindow(QtWidgets.QMainWindow):
                 for idx_read in h5_iter:
                     idx_write += 1
                     self.pool.apply_async(self.fc_process,
-                                          args=(h5_link, idx_read, idx_write, fn_args),
+                                          args=(h5_link, idx_read, idx_write, fn_kwargs),
                                           callback=lambda x: self.worker.signals.update.emit(row, x))
             self.pool.close()
             # check for stop
